@@ -1,0 +1,55 @@
+steps:
+  - id: deploy website
+    name: gcr.io/cloud-builders/gcloud
+    args:
+      - app
+      - deploy
+      - cmd/website/app.yaml
+      - --version=$SHORT_SHA
+      - --project=$PROJECT_ID
+      - -q
+
+  - id: deploy add service
+    name: gcr.io/cloud-builders/gcloud
+    args:
+      - beta
+      - app
+      - deploy
+      - cmd/add/app.yaml
+      - --version=$SHORT_SHA
+      - --project=$PROJECT_ID
+      - -q
+
+  - id: build ws
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - --tag
+      - gcr.io/$PROJECT_ID/ws:$COMMIT_SHA
+      - --tag
+      - gcr.io/$PROJECT_ID/ws:$SHORT_SHA
+      - --file
+      - Dockerfile.ws
+      - .
+
+  - id: deploy ws service
+    name: gcr.io/cloud-builders/gcloud
+    args:
+      - app
+      - deploy
+      - cmd/ws/app.yaml
+      - --version=$SHORT_SHA
+      - --project=$PROJECT_ID
+      - --image-url=gcr.io/$PROJECT_ID/ws:$SHORT_SHA
+      - -q
+
+  - id: deploy disptach
+    name: gcr.io/cloud-builders/gcloud
+    args:
+      - app
+      - deploy
+      - dispatch.yaml
+
+images:
+  - gcr.io/$PROJECT_ID/ws:$COMMIT_SHA
+  - gcr.io/$PROJECT_ID/ws:$SHORT_SHA

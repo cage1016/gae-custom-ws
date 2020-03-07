@@ -19,9 +19,9 @@ type Middleware func(AddService) AddService
 // Implement yor service methods methods.
 // e.x: Foo(ctx context.Context, s string)(rs string, err error)
 type AddService interface {
-	// [method=post,expose=true]
+	// [method=post,expose=true,router=api/add/sum]
 	Sum(ctx context.Context, a int64, b int64) (res int64, err error)
-	// [method=post,expose=true]
+	// [method=post,expose=true,api/add/concat]
 	Concat(ctx context.Context, a string, b string) (res string, err error)
 }
 

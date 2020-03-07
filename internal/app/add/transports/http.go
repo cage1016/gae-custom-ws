@@ -20,7 +20,6 @@ import (
 	"github.com/go-zoo/bone"
 	stdopentracing "github.com/opentracing/opentracing-go"
 	stdzipkin "github.com/openzipkin/zipkin-go"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"google.golang.org/grpc/status"
 
 	"github.com/cage1016/gae-custom-ws/internal/app/add/endpoints"
@@ -54,19 +53,18 @@ func NewHTTPHandler(endpoints endpoints.Endpoints, logger log.Logger) http.Handl
 	}
 
 	m := bone.New()
-	m.Post("/sum", httptransport.NewServer(
+	m.Post("/api/add/sum", httptransport.NewServer(
 		endpoints.SumEndpoint,
 		decodeHTTPSumRequest,
 		encodeJSONResponse,
 		append(options, httptransport.ServerBefore(kitjwt.HTTPToContext()))...,
 	))
-	m.Post("/concat", httptransport.NewServer(
+	m.Post("/api/add/concat", httptransport.NewServer(
 		endpoints.ConcatEndpoint,
 		decodeHTTPConcatRequest,
 		encodeJSONResponse,
 		append(options, httptransport.ServerBefore(kitjwt.HTTPToContext()))...,
 	))
-	m.Get("/metrics", promhttp.Handler())
 	return m
 }
 

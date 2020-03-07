@@ -1,0 +1,9 @@
+dispatch:
+  - url: "*/api/add*"
+    module: add
+
+  - url: "*/ws*"
+    module: ws
+
+  - url: "gae-lab-001.appspot.com/"
+    module: default
