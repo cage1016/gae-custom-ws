@@ -44,20 +44,9 @@ func (s *grpcServer) Concat(ctx context.Context, req *pb.ConcatRequest) (rep *pb
 }
 
 // MakeGRPCServer makes a set of endpoints available as a gRPC server.
-func MakeGRPCServer(endpoints endpoints.Endpoints, otTracer stdopentracing.Tracer, zipkinTracer *stdzipkin.Tracer, logger log.Logger) (req pb.AddServer) { // Zipkin GRPC Server Trace can either be instantiated per gRPC method with a
-	// provided operation name or a global tracing service can be instantiated
-	// without an operation name and fed to each Go kit gRPC server as a
-	// ServerOption.
-	// In the latter case, the operation name will be the endpoint's grpc method
-	// path if used in combination with the Go kit gRPC Interceptor.
-	//
-	// In this example, we demonstrate a global Zipkin tracing service with
-	// Go kit gRPC Interceptor.
-	zipkinServer := zipkin.GRPCServerTrace(zipkinTracer)
-
+func MakeGRPCServer(endpoints endpoints.Endpoints, logger log.Logger) (req pb.AddServer) { // Zipkin GRPC Server Trace can either be instantiated per gRPC method with a
 	options := []grpctransport.ServerOption{
 		grpctransport.ServerErrorLogger(logger),
-		zipkinServer,
 	}
 
 	return &grpcServer{
@@ -65,14 +54,14 @@ func MakeGRPCServer(endpoints endpoints.Endpoints, otTracer stdopentracing.Trace
 			endpoints.SumEndpoint,
 			decodeGRPCSumRequest,
 			encodeGRPCSumResponse,
-			append(options, grpctransport.ServerBefore(opentracing.GRPCToContext(otTracer, "Sum", logger), kitjwt.GRPCToContext()))...,
+			append(options, grpctransport.ServerBefore(kitjwt.GRPCToContext()))...,
 		),
 
 		concat: grpctransport.NewServer(
 			endpoints.ConcatEndpoint,
 			decodeGRPCConcatRequest,
 			encodeGRPCConcatResponse,
-			append(options, grpctransport.ServerBefore(opentracing.GRPCToContext(otTracer, "Concat", logger), kitjwt.GRPCToContext()))...,
+			append(options, grpctransport.ServerBefore(kitjwt.GRPCToContext()))...,
 		),
 	}
 }

@@ -12,43 +12,42 @@ import (
 
 	"github.com/go-kit/kit/log"
 	kitgrpc "github.com/go-kit/kit/transport/grpc"
-	stdopentracing "github.com/opentracing/opentracing-go"
-	"github.com/openzipkin/zipkin-go"
-	zipkinhttp "github.com/openzipkin/zipkin-go/reporter/http"
+	"github.com/nats-io/nats.go"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health"
 	healthgrpc "google.golang.org/grpc/health/grpc_health_v1"
+	"google.golang.org/grpc/reflection"
 
 	"github.com/cage1016/gae-custom-ws/internal/app/add/endpoints"
 	"github.com/cage1016/gae-custom-ws/internal/app/add/service"
 	"github.com/cage1016/gae-custom-ws/internal/app/add/transports"
 	"github.com/cage1016/gae-custom-ws/internal/pkg/level"
 	pb "github.com/cage1016/gae-custom-ws/pb/add"
-	"google.golang.org/grpc/reflection"
 )
 
 const (
-	defZipkinV2URL string = ""
-	defServiceName string = "add"
-	defLogLevel    string = "error"
-	defServiceHost string = "localhost"
-	defHTTPPort    string = "8180"
-	defGRPCPort    string = "8181"
-	envZipkinV2URL string = "QS_ZIPKIN_V2_URL"
-	envServiceName string = "QS_ADD_SERVICE_NAME"
-	envLogLevel    string = "QS_ADD_LOG_LEVEL"
-	envServiceHost string = "QS_ADD_SERVICE_HOST"
-	envHTTPPort    string = "QS_ADD_HTTP_PORT"
-	envGRPCPort    string = "QS_ADD_GRPC_PORT"
+	defServiceName = "add"
+	defLogLevel    = "error"
+	defServiceHost = "localhost"
+	defHTTPPort    = "8180"
+	defGRPCPort    = "8181"
+	defNatsURL     = nats.DefaultURL
+
+	envServiceName = "QS_ADD_SERVICE_NAME"
+	envLogLevel    = "QS_ADD_LOG_LEVEL"
+	envServiceHost = "QS_ADD_SERVICE_HOST"
+	envHTTPPort    = "QS_ADD_HTTP_PORT"
+	envGRPCPort    = "QS_ADD_GRPC_PORT"
+	envNatsURL     = "QS_NATS_URL"
 )
 
 type config struct {
-	serviceName string `json:""`
-	logLevel    string `json:""`
-	serviceHost string `json:""`
-	httpPort    string `json:""`
-	grpcPort    string `json:""`
-	zipkinV2URL string `json:""`
+	serviceName string
+	logLevel    string
+	serviceHost string
+	httpPort    string
+	grpcPort    string
+	natsURL     string
 }
 
 // Env reads specified environment variable. If no value has been found,
@@ -75,18 +74,23 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	tracer := initOpentracing()
-	zipkinTracer := initZipkin(cfg.serviceName, cfg.httpPort, cfg.zipkinV2URL, logger)
-	service := NewServer(logger)
-	endpoints := endpoints.New(service, logger, tracer, zipkinTracer)
+	nc, err := nats.Connect(cfg.natsURL)
+	if err != nil {
+		level.Error(logger).Log("method", "nats.Connect", "err", err)
+		os.Exit(1)
+	}
+	defer nc.Close()
+
+	svc := NewServer(nc, logger)
+	eps := endpoints.New(svc, logger)
 
 	hs := health.NewServer()
 	hs.SetServingStatus(cfg.serviceName, healthgrpc.HealthCheckResponse_SERVING)
 
 	wg := &sync.WaitGroup{}
 
-	go startHTTPServer(ctx, wg, endpoints, tracer, zipkinTracer, cfg.httpPort, logger)
-	go startGRPCServer(ctx, wg, endpoints, tracer, zipkinTracer, cfg.grpcPort, hs, logger)
+	go startHTTPServer(ctx, wg, eps, cfg.httpPort, logger)
+	go startGRPCServer(ctx, wg, eps, cfg.grpcPort, hs, logger)
 
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt)
@@ -104,40 +108,15 @@ func loadConfig(logger log.Logger) (cfg config) {
 	cfg.serviceHost = env(envServiceHost, defServiceHost)
 	cfg.httpPort = env(envHTTPPort, defHTTPPort)
 	cfg.grpcPort = env(envGRPCPort, defGRPCPort)
-	cfg.zipkinV2URL = env(envZipkinV2URL, defZipkinV2URL)
+	cfg.natsURL = env(envNatsURL, defNatsURL)
 	return cfg
 }
 
-func NewServer(logger log.Logger) service.AddService {
-	service := service.New(logger)
-	return service
+func NewServer(nc *nats.Conn, logger log.Logger) service.AddService {
+	return service.New(nc, logger)
 }
 
-func initOpentracing() stdopentracing.Tracer {
-	return stdopentracing.GlobalTracer()
-}
-
-func initZipkin(serviceName, httpPort, zipkinV2URL string, logger log.Logger) (zipkinTracer *zipkin.Tracer) {
-	var (
-		err           error
-		hostPort      = fmt.Sprintf("localhost:%s", httpPort)
-		useNoopTracer = (zipkinV2URL == "")
-		reporter      = zipkinhttp.NewReporter(zipkinV2URL)
-	)
-	zEP, _ := zipkin.NewEndpoint(serviceName, hostPort)
-	zipkinTracer, err = zipkin.NewTracer(reporter, zipkin.WithLocalEndpoint(zEP), zipkin.WithNoopTracer(useNoopTracer))
-	if err != nil {
-		logger.Log("err", err)
-		os.Exit(1)
-	}
-	if !useNoopTracer {
-		logger.Log("tracer", "Zipkin", "type", "Native", "URL", zipkinV2URL)
-	}
-
-	return
-}
-
-func startHTTPServer(ctx context.Context, wg *sync.WaitGroup, endpoints endpoints.Endpoints, tracer stdopentracing.Tracer, zipkinTracer *zipkin.Tracer, port string, logger log.Logger) {
+func startHTTPServer(ctx context.Context, wg *sync.WaitGroup, endpoints endpoints.Endpoints, port string, logger log.Logger) {
 	wg.Add(1)
 	defer wg.Done()
 
@@ -148,7 +127,7 @@ func startHTTPServer(ctx context.Context, wg *sync.WaitGroup, endpoints endpoint
 
 	p := fmt.Sprintf(":%s", port)
 	// create a server
-	srv := &http.Server{Addr: p, Handler: transports.NewHTTPHandler(endpoints, tracer, zipkinTracer, logger)}
+	srv := &http.Server{Addr: p, Handler: transports.NewHTTPHandler(endpoints, logger)}
 	level.Info(logger).Log("protocol", "HTTP", "exposed", port)
 	go func() {
 		// service connections
@@ -169,7 +148,7 @@ func startHTTPServer(ctx context.Context, wg *sync.WaitGroup, endpoints endpoint
 	level.Info(logger).Log("protocol", "HTTP", "Shutdown", "http server gracefully stopped")
 }
 
-func startGRPCServer(ctx context.Context, wg *sync.WaitGroup, endpoints endpoints.Endpoints, tracer stdopentracing.Tracer, zipkinTracer *zipkin.Tracer, port string, hs *health.Server, logger log.Logger) {
+func startGRPCServer(ctx context.Context, wg *sync.WaitGroup, endpoints endpoints.Endpoints, port string, hs *health.Server, logger log.Logger) {
 	wg.Add(1)
 	defer wg.Done()
 
@@ -183,7 +162,7 @@ func startGRPCServer(ctx context.Context, wg *sync.WaitGroup, endpoints endpoint
 	var server *grpc.Server
 	level.Info(logger).Log("protocol", "GRPC", "exposed", port)
 	server = grpc.NewServer(grpc.UnaryInterceptor(kitgrpc.Interceptor))
-	pb.RegisterAddServer(server, transports.MakeGRPCServer(endpoints, tracer, zipkinTracer, logger))
+	pb.RegisterAddServer(server, transports.MakeGRPCServer(endpoints, logger))
 	healthgrpc.RegisterHealthServer(server, hs)
 	reflection.Register(server)
 

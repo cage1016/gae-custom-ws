@@ -6,28 +6,22 @@ import (
 	"github.com/cage1016/gae-custom-ws/internal/app/add/service"
 	"github.com/go-kit/kit/endpoint"
 	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/tracing/opentracing"
-	"github.com/go-kit/kit/tracing/zipkin"
-	stdopentracing "github.com/opentracing/opentracing-go"
-	stdzipkin "github.com/openzipkin/zipkin-go"
 )
 
 // Endpoints collects all of the endpoints that compose the add service. It's
 // meant to be used as a helper struct, to collect all of the endpoints into a
 // single parameter.
 type Endpoints struct {
-	SumEndpoint    endpoint.Endpoint `json:""`
-	ConcatEndpoint endpoint.Endpoint `json:""`
+	SumEndpoint    endpoint.Endpoint
+	ConcatEndpoint endpoint.Endpoint
 }
 
 // New return a new instance of the endpoint that wraps the provided service.
-func New(svc service.AddService, logger log.Logger, otTracer stdopentracing.Tracer, zipkinTracer *stdzipkin.Tracer) (ep Endpoints) {
+func New(svc service.AddService, logger log.Logger) (ep Endpoints) {
 	var sumEndpoint endpoint.Endpoint
 	{
 		method := "sum"
 		sumEndpoint = MakeSumEndpoint(svc)
-		sumEndpoint = opentracing.TraceServer(otTracer, method)(sumEndpoint)
-		sumEndpoint = zipkin.TraceEndpoint(zipkinTracer, method)(sumEndpoint)
 		sumEndpoint = LoggingMiddleware(log.With(logger, "method", method))(sumEndpoint)
 		ep.SumEndpoint = sumEndpoint
 	}
@@ -36,8 +30,6 @@ func New(svc service.AddService, logger log.Logger, otTracer stdopentracing.Trac
 	{
 		method := "concat"
 		concatEndpoint = MakeConcatEndpoint(svc)
-		concatEndpoint = opentracing.TraceServer(otTracer, method)(concatEndpoint)
-		concatEndpoint = zipkin.TraceEndpoint(zipkinTracer, method)(concatEndpoint)
 		concatEndpoint = LoggingMiddleware(log.With(logger, "method", method))(concatEndpoint)
 		ep.ConcatEndpoint = concatEndpoint
 	}

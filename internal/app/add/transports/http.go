@@ -47,17 +47,10 @@ func JSONErrorDecoder(r *http.Response) error {
 
 // NewHTTPHandler returns a handler that makes a set of endpoints available on
 // predefined paths.
-func NewHTTPHandler(endpoints endpoints.Endpoints, otTracer stdopentracing.Tracer, zipkinTracer *stdzipkin.Tracer, logger log.Logger) http.Handler { // Zipkin HTTP Server Trace can either be instantiated per endpoint with a
-	// provided operation name or a global tracing service can be instantiated
-	// without an operation name and fed to each Go kit endpoint as ServerOption.
-	// In the latter case, the operation name will be the endpoint's http method.
-	// We demonstrate a global tracing service here.
-	zipkinServer := zipkin.HTTPServerTrace(zipkinTracer)
-
+func NewHTTPHandler(endpoints endpoints.Endpoints, logger log.Logger) http.Handler { // Zipkin HTTP Server Trace can either be instantiated per endpoint with a
 	options := []httptransport.ServerOption{
 		httptransport.ServerErrorEncoder(httpEncodeError),
 		httptransport.ServerErrorLogger(logger),
-		zipkinServer,
 	}
 
 	m := bone.New()
@@ -65,13 +58,13 @@ func NewHTTPHandler(endpoints endpoints.Endpoints, otTracer stdopentracing.Trace
 		endpoints.SumEndpoint,
 		decodeHTTPSumRequest,
 		encodeJSONResponse,
-		append(options, httptransport.ServerBefore(opentracing.HTTPToContext(otTracer, "Sum", logger), kitjwt.HTTPToContext()))...,
+		append(options, httptransport.ServerBefore(kitjwt.HTTPToContext()))...,
 	))
 	m.Post("/concat", httptransport.NewServer(
 		endpoints.ConcatEndpoint,
 		decodeHTTPConcatRequest,
 		encodeJSONResponse,
-		append(options, httptransport.ServerBefore(opentracing.HTTPToContext(otTracer, "Concat", logger), kitjwt.HTTPToContext()))...,
+		append(options, httptransport.ServerBefore(kitjwt.HTTPToContext()))...,
 	))
 	m.Get("/metrics", promhttp.Handler())
 	return m
