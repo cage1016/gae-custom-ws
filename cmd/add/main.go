@@ -36,7 +36,7 @@ const (
 	envServiceName = "QS_ADD_SERVICE_NAME"
 	envLogLevel    = "QS_ADD_LOG_LEVEL"
 	envServiceHost = "QS_ADD_SERVICE_HOST"
-	envHTTPPort    = "QS_ADD_HTTP_PORT"
+	envHTTPPort    = "PORT"
 	envGRPCPort    = "QS_ADD_GRPC_PORT"
 	envNatsURL     = "QS_NATS_URL"
 )
@@ -76,7 +76,7 @@ func main() {
 
 	nc, err := nats.Connect(cfg.natsURL)
 	if err != nil {
-		level.Error(logger).Log("method", "nats.Connect", "err", err)
+		level.Error(logger).Log("method", "nats.Connect", "natsURL", cfg.natsURL, "err", err)
 		os.Exit(1)
 	}
 	defer nc.Close()
@@ -102,7 +102,7 @@ func main() {
 	fmt.Println("main: all goroutines have told us they've finished")
 }
 
-func loadConfig(logger log.Logger) (cfg config) {
+func loadConfig(_ log.Logger) (cfg config) {
 	cfg.serviceName = env(envServiceName, defServiceName)
 	cfg.logLevel = env(envLogLevel, defLogLevel)
 	cfg.serviceHost = env(envServiceHost, defServiceHost)

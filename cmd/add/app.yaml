@@ -1,0 +1,14 @@
+service: add
+
+runtime: go112
+
+handlers:
+  - url: /.*
+    script: auto
+    secure: always
+
+vpc_access_connector:
+  name: projects/gae-lab-001/locations/us-central1/connectors/nats-1-vm-connector
+
+env_variables:
+  QS_NATS_URL: nats:WKhppQ42XEEd@10.142.0.2:4222

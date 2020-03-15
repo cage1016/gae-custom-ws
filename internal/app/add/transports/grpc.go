@@ -10,11 +10,7 @@ import (
 	kitjwt "github.com/go-kit/kit/auth/jwt"
 	"github.com/go-kit/kit/endpoint"
 	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/tracing/opentracing"
-	"github.com/go-kit/kit/tracing/zipkin"
 	grpctransport "github.com/go-kit/kit/transport/grpc"
-	stdopentracing "github.com/opentracing/opentracing-go"
-	stdzipkin "github.com/openzipkin/zipkin-go"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -98,18 +94,10 @@ func encodeGRPCConcatResponse(_ context.Context, grpcReply interface{}) (res int
 // of the conn. The caller is responsible for constructing the conn, and
 // eventually closing the underlying transport. We bake-in certain middlewares,
 // implementing the client library pattern.
-func NewGRPCClient(conn *grpc.ClientConn, otTracer stdopentracing.Tracer, zipkinTracer *stdzipkin.Tracer, logger log.Logger) service.AddService { // Zipkin GRPC Client Trace can either be instantiated per gRPC method with a
-	// provided operation name or a global tracing client can be instantiated
-	// without an operation name and fed to each Go kit client as ClientOption.
-	// In the latter case, the operation name will be the endpoint's grpc method
-	// path.
-	//
-	// In this example, we demonstrace a global tracing client.
-	zipkinClient := zipkin.GRPCClientTrace(zipkinTracer)
-
+func NewGRPCClient(conn *grpc.ClientConn, logger log.Logger) service.AddService { // Zipkin GRPC Client Trace can either be instantiated per gRPC method with a
 	// global client middlewares
 	options := []grpctransport.ClientOption{
-		zipkinClient,
+
 	}
 
 	// The Sum endpoint is the same thing, with slightly different
@@ -123,9 +111,8 @@ func NewGRPCClient(conn *grpc.ClientConn, otTracer stdopentracing.Tracer, zipkin
 			encodeGRPCSumRequest,
 			decodeGRPCSumResponse,
 			pb.SumResponse{},
-			append(options, grpctransport.ClientBefore(opentracing.ContextToGRPC(otTracer, logger), kitjwt.ContextToGRPC()))...,
+			append(options, grpctransport.ClientBefore(kitjwt.ContextToGRPC()))...,
 		).Endpoint()
-		sumEndpoint = opentracing.TraceClient(otTracer, "Sum")(sumEndpoint)
 	}
 
 	// The Concat endpoint is the same thing, with slightly different
@@ -139,9 +126,8 @@ func NewGRPCClient(conn *grpc.ClientConn, otTracer stdopentracing.Tracer, zipkin
 			encodeGRPCConcatRequest,
 			decodeGRPCConcatResponse,
 			pb.ConcatResponse{},
-			append(options, grpctransport.ClientBefore(opentracing.ContextToGRPC(otTracer, logger), kitjwt.ContextToGRPC()))...,
+			append(options, grpctransport.ClientBefore(kitjwt.ContextToGRPC()))...,
 		).Endpoint()
-		concatEndpoint = opentracing.TraceClient(otTracer, "Concat")(concatEndpoint)
 	}
 
 	return endpoints.Endpoints{
